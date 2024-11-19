@@ -6,12 +6,36 @@
     <title>Web Performance Analysis</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        /* Style for chart container */
-        .chart-container {
-            width: 400px;
-            height: 400px;
-            margin: 0 auto;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
             text-align: center;
+        }
+        form {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        #graphContainer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+        .graph-item {
+            text-align: center;
+            width: 250px;
+        }
+        iframe {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ddd;
+        }
+        #previewError {
+            text-align: center;
+            color: red;
         }
     </style>
 </head>
@@ -21,14 +45,15 @@
         <input type="text" id="urlInput" placeholder="Enter a URL" required>
         <button type="submit">Analyze</button>
     </form>
-
-    <h2>Load Time Classification Chart</h2>
-    <div class="chart-container">
-        <canvas id="classificationChart"></canvas>
+    
+    <h2>Website Preview</h2>
+    <div id="previewContainer">
+        <iframe id="previewFrame"></iframe>
+        <p id="previewError" style="display: none;">Unable to preview this website. <a id="previewLink" href="#" target="_blank">Open in a new tab</a>.</p>
     </div>
 
-    <h3>Files Classified as Bad</h3>
-    <ul id="badFilesList"></ul>
+    <h2>Performance Analysis</h2>
+    <div id="graphContainer"></div>
 
     <script>
         document.getElementById('urlForm').addEventListener('submit', async function(event) {
@@ -43,66 +68,77 @@
             });
 
             const data = await response.json();
-            displayChart(data);
-            displayBadFiles(data);
+            displayGraphs(data);
+            showPreview(url);
         });
 
-        function displayChart(data) {
-            const classifications = {
-                Good: 'green',
-                Ok: 'orange',
-                Bad: 'red'
+        function showPreview(url) {
+            const iframe = document.getElementById('previewFrame');
+            const previewError = document.getElementById('previewError');
+            const previewLink = document.getElementById('previewLink');
+
+            iframe.style.display = "block";
+            previewError.style.display = "none";
+            iframe.src = url;
+
+            iframe.onload = function () {
+                console.log('Website loaded successfully in iframe.');
             };
 
-            const labels = [];
-            const backgroundColors = [];
-            const dataPoints = [];
+            iframe.onerror = function () {
+                console.warn('Unable to load website in iframe.');
+                iframe.style.display = "none";
+                previewError.style.display = "block";
+                previewLink.href = url;
+            };
+        }
 
-            // Aggregate data for all files into a single chart
-            const allFiles = data.html.concat(data.css, data.js, data.images);
-            allFiles.forEach((file, index) => {
-                labels.push(file.url);
-                backgroundColors.push(classifications[file.classification]);
-                dataPoints.push(1); // Each file is represented by one segment
+        function displayGraphs(data) {
+            const graphContainer = document.getElementById('graphContainer');
+            graphContainer.innerHTML = ''; // Clear previous graphs
+
+            const types = ['html', 'css', 'js', 'images'];
+            types.forEach(type => {
+                if (type === 'html' && data.html) {
+                    createDonutGraph(type, 'HTML', data.html.load_time, data.html.url || "HTML Document");
+                }
+                data[type]?.forEach(file => {
+                    createDonutGraph(type, type.toUpperCase(), file.load_time, file.url);
+                });
             });
+        }
 
-            // Clear any existing chart before creating a new one
-            const ctx = document.getElementById('classificationChart').getContext('2d');
-            if (window.classificationChart) {
-                window.classificationChart.destroy();
-            }
+        function createDonutGraph(type, label, loadTime, url) {
+            const graphId = `graph-${type}-${url}`;
+            const div = document.createElement('div');
+            div.className = 'graph-item';
+            div.innerHTML = `
+                <h3>${label}: <a href="${url}" target="_blank">${url}</a></h3>
+                <canvas id="${graphId}" width="150" height="150"></canvas>
+            `;
+            document.getElementById('graphContainer').appendChild(div);
 
-            // Create a single doughnut chart for all files
-            window.classificationChart = new Chart(ctx, {
+            const score = Math.max(1, Math.round(10 - loadTime * 10));
+            const ctx = document.getElementById(graphId).getContext('2d');
+
+            new Chart(ctx, {
                 type: 'doughnut',
                 data: {
-                    labels: labels,
+                    labels: [`Score: ${score}/10`],
                     datasets: [{
-                        data: dataPoints,
-                        backgroundColor: backgroundColors
+                        data: [score, 10 - score],
+                        backgroundColor: ['green', 'lightgray']
                     }]
                 },
                 options: {
                     responsive: true,
                     plugins: {
-                        legend: { display: true },
-                        tooltip: { enabled: true }
-                    }
+                        legend: {
+                            display: true
+                        }
+                    },
+                    cutout: '70%'
                 }
-            });
-        }
-
-        function displayBadFiles(data) {
-            const badFilesList = document.getElementById('badFilesList');
-            badFilesList.innerHTML = '';
-
-            const badItems = data.html.concat(data.css, data.js, data.images)
-                .filter(item => item.classification === 'Bad');
-
-            badItems.forEach(item => {
-                const li = document.createElement('li');
-                li.textContent = item.url;
-                badFilesList.appendChild(li);
             });
         }
     </script>
